@@ -9,8 +9,9 @@
 #define WIFI_PASSWORD "Nitesh@7349478091"
 
 // ================= FIREBASE =================
-#define API_KEY "YOUR_API_KEY"
-#define DATABASE_URL "YOUR_DB_URL"
+#define API_KEY "AIzaSyA2vHVbqH6EoMuO-iXDzlh0uYL2fF1tPgw"
+
+#define DATABASE_URL "https://esp32-smart-home-switch-nh-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
 // ================= RELAYS =================
 #define R1 25
@@ -21,6 +22,7 @@
 // ================= SENSORS =================
 #define DHTPIN 4
 #define DHTTYPE DHT11
+
 #define LDR_PIN 34
 #define GAS_PIN 35
 #define PIR_PIN 13
@@ -31,6 +33,7 @@
 
 // ================= OBJECTS =================
 DHT dht(DHTPIN, DHTTYPE);
+
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 FirebaseData fbdo;
@@ -51,6 +54,7 @@ const unsigned long lcdInterval = 1000;
 unsigned long previousSensorMillis = 0;
 unsigned long previousFirebaseMillis = 0;
 unsigned long previousLCDMillis = 0;
+
 unsigned long lastMotionTime = 0;
 
 // ================= VARIABLES =================
@@ -69,27 +73,26 @@ void setup() {
 
   Serial.begin(115200);
 
-  // Relay Pins
+  // ================= PIN MODES =================
   pinMode(R1, OUTPUT);
   pinMode(R2, OUTPUT);
   pinMode(R3, OUTPUT);
   pinMode(R4, OUTPUT);
 
-  // Sensor Pins
   pinMode(PIR_PIN, INPUT);
 
-  // Output Pins
   pinMode(WIFI_LED, OUTPUT);
   pinMode(BUZZER, OUTPUT);
 
-  // Initial States
+  // ================= INITIAL STATES =================
   digitalWrite(R1, LOW);
   digitalWrite(R2, LOW);
   digitalWrite(R3, LOW);
   digitalWrite(R4, LOW);
+
   digitalWrite(BUZZER, LOW);
 
-  // Start DHT Sensor
+  // ================= START DHT =================
   dht.begin();
 
   // ================= LCD =================
@@ -105,6 +108,7 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED) {
 
     digitalWrite(WIFI_LED, !digitalRead(WIFI_LED));
+
     delay(300);
   }
 
@@ -115,11 +119,14 @@ void setup() {
 
   // ================= FIREBASE =================
   config.api_key = API_KEY;
+
   config.database_url = DATABASE_URL;
 
-  config.signer.test_mode = true;
+  auth.user.email = "msrcasc.project@gmail.com";
+  auth.user.password = "050809";
 
   Firebase.begin(&config, &auth);
+
   Firebase.reconnectWiFi(true);
 
   delay(1000);
@@ -132,11 +139,11 @@ void loop() {
 
   unsigned long currentMillis = millis();
 
-  // ================= WIFI STATUS =================
+  // ================= WIFI STATUS LED =================
   digitalWrite(WIFI_LED, WiFi.status() == WL_CONNECTED);
 
   // =====================================================
-  // SENSOR READ TASK
+  // SENSOR READING TASK
   // =====================================================
   if (currentMillis - previousSensorMillis >= sensorInterval) {
 
@@ -146,11 +153,11 @@ void loop() {
     temp = dht.readTemperature();
     hum = dht.readHumidity();
 
-    // Read Analog Sensors
+    // Read Sensors
     lightVal = analogRead(LDR_PIN);
+
     gasVal = analogRead(GAS_PIN);
 
-    // Read PIR
     motion = digitalRead(PIR_PIN);
 
     // ================= SERIAL MONITOR =================
@@ -204,7 +211,7 @@ void loop() {
   }
 
   // =====================================================
-  // GAS ALERT
+  // GAS ALERT -> BUZZER
   // =====================================================
 
   if (gasVal > gasThreshold) {
@@ -227,6 +234,7 @@ void loop() {
         Firebase.RTDB.getJSON(&fbdo, "/devices/switchboard1")) {
 
       FirebaseJson &json = fbdo.jsonObject();
+
       FirebaseJsonData data;
 
       // Relay3
@@ -242,21 +250,33 @@ void loop() {
       }
 
       digitalWrite(R3, r3State);
+
       digitalWrite(R4, r4State);
     }
 
     // =====================================================
-    // SEND SENSOR DATA TO FIREBASE
+    // SEND SENSOR + RELAY DATA TO FIREBASE
     // =====================================================
 
     FirebaseJson sensorData;
 
+    // Sensor Data
     sensorData.set("temperature", temp);
     sensorData.set("humidity", hum);
+
     sensorData.set("light", lightVal);
     sensorData.set("gas", gasVal);
+
     sensorData.set("motion", motion);
 
+    // Relay Status
+    sensorData.set("relay1", digitalRead(R1));
+    sensorData.set("relay2", digitalRead(R2));
+
+    sensorData.set("relay3", digitalRead(R3));
+    sensorData.set("relay4", digitalRead(R4));
+
+    // Upload to Firebase
     Firebase.RTDB.updateNode(
       &fbdo,
       "/devices/switchboard1",
@@ -285,10 +305,10 @@ void loop() {
     // Second Row
     lcd.setCursor(0, 1);
 
-    lcd.print("LDR:");
+    lcd.print("L:");
     lcd.print(lightVal);
 
-    lcd.print(" Gas:");
+    lcd.print(" G:");
     lcd.print(gasVal);
   }
 }
