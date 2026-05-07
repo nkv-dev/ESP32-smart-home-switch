@@ -111,8 +111,8 @@ pio device monitor    # Open serial monitor
 - Control relays via Firebase Realtime Database writes
 - View real-time sensor data in the Firebase console
 - Smart automation rules:
-  - Relay 1 turns on automatically when ambient light < 1500 and motion is detected
-  - Relay 1 turns off 30 seconds after last motion detection
+  - Relay 1 (GPIO 25) turns on automatically when ambient light < 1500 (dark), off when bright
+  - Relay 2 (GPIO 26) turns on when motion is detected, turns off 30 seconds after last motion
   - Buzzer activates when gas levels exceed 300
 - LCD displays temperature, humidity, light, and gas readings in real-time
 
