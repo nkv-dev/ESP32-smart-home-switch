@@ -37,135 +37,258 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-// ================= STATES =================
-bool r1State = false;
-bool r2State = false;
+// ================= SETTINGS =================
+const int lightThreshold = 1500;
+const int gasThreshold = 300;
+
+const unsigned long motionTimeout = 30000;
+
+const unsigned long sensorInterval = 2000;
+const unsigned long firebaseInterval = 2000;
+const unsigned long lcdInterval = 1000;
+
+// ================= TIMERS =================
+unsigned long previousSensorMillis = 0;
+unsigned long previousFirebaseMillis = 0;
+unsigned long previousLCDMillis = 0;
+unsigned long lastMotionTime = 0;
+
+// ================= VARIABLES =================
+float temp = 0;
+float hum = 0;
+
+int lightVal = 0;
+int gasVal = 0;
+int motion = 0;
+
 bool r3State = false;
 bool r4State = false;
 
-// motion timer
-unsigned long lastMotionTime = 0;
-const int motionTimeout = 30000; // 30 sec
-
 // ================= SETUP =================
 void setup() {
+
   Serial.begin(115200);
 
+  // Relay Pins
   pinMode(R1, OUTPUT);
   pinMode(R2, OUTPUT);
   pinMode(R3, OUTPUT);
   pinMode(R4, OUTPUT);
 
-  pinMode(WIFI_LED, OUTPUT);
-  pinMode(BUZZER, OUTPUT);
+  // Sensor Pins
   pinMode(PIR_PIN, INPUT);
 
+  // Output Pins
+  pinMode(WIFI_LED, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+  // Initial States
   digitalWrite(R1, LOW);
   digitalWrite(R2, LOW);
   digitalWrite(R3, LOW);
   digitalWrite(R4, LOW);
   digitalWrite(BUZZER, LOW);
 
+  // Start DHT Sensor
   dht.begin();
 
+  // ================= LCD =================
   lcd.init();
   lcd.backlight();
+
+  lcd.setCursor(0, 0);
   lcd.print("Smart Switch");
 
-  // WiFi connect
+  // ================= WIFI =================
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
   while (WiFi.status() != WL_CONNECTED) {
+
     digitalWrite(WIFI_LED, !digitalRead(WIFI_LED));
     delay(300);
   }
+
   digitalWrite(WIFI_LED, HIGH);
 
   lcd.clear();
   lcd.print("WiFi Connected");
 
-  // Firebase config
+  // ================= FIREBASE =================
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
+
   config.signer.test_mode = true;
 
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 
-  delay(2000);
+  delay(1000);
+
   lcd.clear();
 }
 
 // ================= LOOP =================
 void loop() {
 
-  // WiFi LED
+  unsigned long currentMillis = millis();
+
+  // ================= WIFI STATUS =================
   digitalWrite(WIFI_LED, WiFi.status() == WL_CONNECTED);
 
-  // ========= FIREBASE RELAY CONTROL =========
-  if (WiFi.status() == WL_CONNECTED &&
-      Firebase.RTDB.getJSON(&fbdo, "/devices/switchboard1")) {
+  // =====================================================
+  // SENSOR READ TASK
+  // =====================================================
+  if (currentMillis - previousSensorMillis >= sensorInterval) {
 
-    FirebaseJson &json = fbdo.jsonObject();
-    FirebaseJsonData data;
+    previousSensorMillis = currentMillis;
 
-    if (json.get(data, "relay1")) r1State = data.to<int>();
-    if (json.get(data, "relay2")) r2State = data.to<int>();
-    if (json.get(data, "relay3")) r3State = data.to<int>();
-    if (json.get(data, "relay4")) r4State = data.to<int>();
+    // Read DHT11
+    temp = dht.readTemperature();
+    hum = dht.readHumidity();
 
-    digitalWrite(R1, r1State);
-    digitalWrite(R2, r2State);
-    digitalWrite(R3, r3State);
-    digitalWrite(R4, r4State);
+    // Read Analog Sensors
+    lightVal = analogRead(LDR_PIN);
+    gasVal = analogRead(GAS_PIN);
+
+    // Read PIR
+    motion = digitalRead(PIR_PIN);
+
+    // ================= SERIAL MONITOR =================
+    Serial.print("Temp: ");
+    Serial.print(temp);
+
+    Serial.print("  Humidity: ");
+    Serial.print(hum);
+
+    Serial.print("  Light: ");
+    Serial.print(lightVal);
+
+    Serial.print("  Gas: ");
+    Serial.print(gasVal);
+
+    Serial.print("  Motion: ");
+    Serial.println(motion);
   }
 
-  // ========= SENSOR READ =========
-  float temp = dht.readTemperature();
-  float hum = dht.readHumidity();
-  int lightVal = analogRead(LDR_PIN);
-  int gasVal = analogRead(GAS_PIN);
-  int motion = digitalRead(PIR_PIN);
+  // =====================================================
+  // LDR AUTOMATION -> RELAY1
+  // =====================================================
 
-  // Motion tracking
-  if (motion == HIGH) {
-    lastMotionTime = millis();
-  }
+  // Dark -> ON
+  if (lightVal < lightThreshold) {
 
-  // 🔥 Gas Alert
-  digitalWrite(BUZZER, gasVal > 300);
-
-  // 💡 Smart Light (Relay1)
-  if (lightVal < 1500 && motion == HIGH) {
     digitalWrite(R1, HIGH);
-  }
 
-  // Auto OFF after no motion
-  if (millis() - lastMotionTime > motionTimeout) {
+  } else {
+
+    // Bright -> OFF
     digitalWrite(R1, LOW);
   }
 
-  // ========= LCD =========
-  lcd.setCursor(0,0);
-  lcd.print("T:");
-  lcd.print(temp);
-  lcd.print(" H:");
-  lcd.print(hum);
+  // =====================================================
+  // PIR AUTOMATION -> RELAY2
+  // =====================================================
 
-  lcd.setCursor(0,1);
-  lcd.print("L:");
-  lcd.print(lightVal);
-  lcd.print(" G:");
-  lcd.print(gasVal);
+  // Motion detected
+  if (motion == HIGH) {
 
-  // ========= SEND DATA =========
-  FirebaseJson json;
-  json.set("temperature", temp);
-  json.set("humidity", hum);
-  json.set("light", lightVal);
-  json.set("gas", gasVal);
-  json.set("motion", motion);
+    lastMotionTime = currentMillis;
 
-  Firebase.RTDB.updateNode(&fbdo, "/devices/switchboard1", &json);
+    digitalWrite(R2, HIGH);
+  }
 
-  delay(2000);
+  // No motion timeout
+  if (currentMillis - lastMotionTime > motionTimeout) {
+
+    digitalWrite(R2, LOW);
+  }
+
+  // =====================================================
+  // GAS ALERT
+  // =====================================================
+
+  if (gasVal > gasThreshold) {
+
+    digitalWrite(BUZZER, HIGH);
+
+  } else {
+
+    digitalWrite(BUZZER, LOW);
+  }
+
+  // =====================================================
+  // FIREBASE CONTROL -> RELAY3 & RELAY4
+  // =====================================================
+  if (currentMillis - previousFirebaseMillis >= firebaseInterval) {
+
+    previousFirebaseMillis = currentMillis;
+
+    if (WiFi.status() == WL_CONNECTED &&
+        Firebase.RTDB.getJSON(&fbdo, "/devices/switchboard1")) {
+
+      FirebaseJson &json = fbdo.jsonObject();
+      FirebaseJsonData data;
+
+      // Relay3
+      if (json.get(data, "relay3")) {
+
+        r3State = data.to<int>();
+      }
+
+      // Relay4
+      if (json.get(data, "relay4")) {
+
+        r4State = data.to<int>();
+      }
+
+      digitalWrite(R3, r3State);
+      digitalWrite(R4, r4State);
+    }
+
+    // =====================================================
+    // SEND SENSOR DATA TO FIREBASE
+    // =====================================================
+
+    FirebaseJson sensorData;
+
+    sensorData.set("temperature", temp);
+    sensorData.set("humidity", hum);
+    sensorData.set("light", lightVal);
+    sensorData.set("gas", gasVal);
+    sensorData.set("motion", motion);
+
+    Firebase.RTDB.updateNode(
+      &fbdo,
+      "/devices/switchboard1",
+      &sensorData
+    );
+  }
+
+  // =====================================================
+  // LCD UPDATE
+  // =====================================================
+  if (currentMillis - previousLCDMillis >= lcdInterval) {
+
+    previousLCDMillis = currentMillis;
+
+    lcd.clear();
+
+    // First Row
+    lcd.setCursor(0, 0);
+
+    lcd.print("T:");
+    lcd.print(temp);
+
+    lcd.print(" H:");
+    lcd.print(hum);
+
+    // Second Row
+    lcd.setCursor(0, 1);
+
+    lcd.print("LDR:");
+    lcd.print(lightVal);
+
+    lcd.print(" Gas:");
+    lcd.print(gasVal);
+  }
 }
