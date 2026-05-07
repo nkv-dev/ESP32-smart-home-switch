@@ -91,21 +91,21 @@ pio device monitor    # Open serial monitor
 ## Firebase Setup
 1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
 2. Enable Realtime Database in test mode
-3. Create the following database structure at `/devices/switchboard1`:
+3. The ESP32 will automatically create the following database structure at `/devices/switchboard1`:
    ```json
    {
-     "relay1": 0,
+     "gas": 89,
+     "humidity": 41.9,
+     "light": 38,
+     "motion": 0,
+     "relay1": 1,
      "relay2": 0,
      "relay3": 0,
-     "relay4": 0,
-     "temperature": 0,
-     "humidity": 0,
-     "light": 0,
-     "gas": 0,
-     "motion": 0
+     "relay4": 1,
+     "temperature": 34.5
    }
    ```
-4. Update relay values (0=OFF, 1=ON) to control switches remotely. Sensor data is automatically pushed every 2 seconds.
+4. Write relay values (0=OFF, 1=ON) to `relay3` or `relay4` to control them remotely. Sensor data is automatically pushed every 2 seconds.
 
 ## Usage
 - Control relays via Firebase Realtime Database writes
