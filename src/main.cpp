@@ -42,7 +42,7 @@ FirebaseConfig config;
 
 // ================= SETTINGS =================
 const int lightThreshold = 1500;
-const int gasThreshold = 300;
+const int gasThreshold = 750;
 
 const unsigned long motionTimeout = 30000;
 
